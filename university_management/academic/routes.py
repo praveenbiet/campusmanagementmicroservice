@@ -5,7 +5,7 @@ from .models import (
     Institution, Campus, SchoolCollege, Department, Program,
     AcademicYear, Term, Holiday, Course, Prerequisite, Section,
     ScheduleSlot, CurriculumMapping, Faculty, ProgramCourse,
-    Room, Building
+    Room, Building, AcademicRecord, CourseEnrollment, Grade, AcademicCalendar, AcademicTerm
 )
 from utils import role_required, validate_request, format_response, log_activity, handle_exception, paginate_query, format_paginated_response
 from datetime import datetime
@@ -382,25 +382,40 @@ def create_curriculum_mapping(program_id):
 
 # Program Routes
 @academic_bp.route('/programs', methods=['GET'])
-@jwt_required()
 def get_programs():
     programs = Program.query.all()
-    return jsonify([program.to_dict() for program in programs])
+    return jsonify([{
+        'id': program.id,
+        'name': program.name,
+        'code': program.code,
+        'description': program.description,
+        'degree_type': program.degree_type,
+        'duration': program.duration,
+        'credits_required': program.credits_required,
+        'status': program.status
+    } for program in programs])
+
+@academic_bp.route('/programs', methods=['POST'])
+def create_program():
+    data = request.get_json()
+    program = Program(
+        name=data['name'],
+        code=data['code'],
+        description=data.get('description'),
+        degree_type=data['degree_type'],
+        duration=data['duration'],
+        credits_required=data['credits_required'],
+        status=data.get('status', 'active')
+    )
+    db.session.add(program)
+    db.session.commit()
+    return jsonify({'message': 'Program created successfully', 'id': program.id}), 201
 
 @academic_bp.route('/programs/<id>', methods=['GET'])
 @jwt_required()
 def get_program(id):
     program = Program.query.get_or_404(id)
     return jsonify(program.to_dict())
-
-@academic_bp.route('/programs', methods=['POST'])
-@jwt_required()
-def create_program():
-    data = request.get_json()
-    program = Program(**data)
-    db.session.add(program)
-    db.session.commit()
-    return jsonify(program.to_dict()), 201
 
 @academic_bp.route('/programs/<id>', methods=['PUT'])
 @jwt_required()
@@ -502,25 +517,38 @@ def delete_faculty(id):
 
 # Course Routes
 @academic_bp.route('/courses', methods=['GET'])
-@jwt_required()
 def get_courses():
     courses = Course.query.all()
-    return jsonify([course.to_dict() for course in courses])
+    return jsonify([{
+        'id': course.id,
+        'name': course.name,
+        'code': course.code,
+        'description': course.description,
+        'credits': course.credits,
+        'prerequisites': course.prerequisites,
+        'status': course.status
+    } for course in courses])
+
+@academic_bp.route('/courses', methods=['POST'])
+def create_course():
+    data = request.get_json()
+    course = Course(
+        name=data['name'],
+        code=data['code'],
+        description=data.get('description'),
+        credits=data['credits'],
+        prerequisites=data.get('prerequisites'),
+        status=data.get('status', 'active')
+    )
+    db.session.add(course)
+    db.session.commit()
+    return jsonify({'message': 'Course created successfully', 'id': course.id}), 201
 
 @academic_bp.route('/courses/<id>', methods=['GET'])
 @jwt_required()
 def get_course(id):
     course = Course.query.get_or_404(id)
     return jsonify(course.to_dict())
-
-@academic_bp.route('/courses', methods=['POST'])
-@jwt_required()
-def create_course():
-    data = request.get_json()
-    course = Course(**data)
-    db.session.add(course)
-    db.session.commit()
-    return jsonify(course.to_dict()), 201
 
 @academic_bp.route('/courses/<id>', methods=['PUT'])
 @jwt_required()
@@ -582,30 +610,37 @@ def delete_section(id):
 
 # Term Routes
 @academic_bp.route('/terms', methods=['GET'])
-@jwt_required()
 def get_terms():
-    terms = Term.query.all()
-    return jsonify([term.to_dict() for term in terms])
-
-@academic_bp.route('/terms/<id>', methods=['GET'])
-@jwt_required()
-def get_term(id):
-    term = Term.query.get_or_404(id)
-    return jsonify(term.to_dict())
+    terms = AcademicTerm.query.all()
+    return jsonify([{
+        'id': term.id,
+        'name': term.name,
+        'start_date': term.start_date.isoformat(),
+        'end_date': term.end_date.isoformat(),
+        'registration_start': term.registration_start.isoformat(),
+        'registration_end': term.registration_end.isoformat(),
+        'status': term.status
+    } for term in terms])
 
 @academic_bp.route('/terms', methods=['POST'])
-@jwt_required()
 def create_term():
     data = request.get_json()
-    term = Term(**data)
+    term = AcademicTerm(
+        name=data['name'],
+        start_date=datetime.fromisoformat(data['start_date']),
+        end_date=datetime.fromisoformat(data['end_date']),
+        registration_start=datetime.fromisoformat(data['registration_start']),
+        registration_end=datetime.fromisoformat(data['registration_end']),
+        status=data.get('status', 'upcoming')
+    )
     db.session.add(term)
     db.session.commit()
-    return jsonify(term.to_dict()), 201
+    return jsonify({'message': 'Term created successfully', 'id': term.id}), 201
 
 @academic_bp.route('/terms/<id>', methods=['PUT'])
 @jwt_required()
 def update_term(id):
-    term = Term.query.get_or_404(id)
+    term = AcademicTerm.query.get_or_404(id)
     data = request.get_json()
     for key, value in data.items():
         setattr(term, key, value)
@@ -615,7 +650,7 @@ def update_term(id):
 @academic_bp.route('/terms/<id>', methods=['DELETE'])
 @jwt_required()
 def delete_term(id):
-    term = Term.query.get_or_404(id)
+    term = AcademicTerm.query.get_or_404(id)
     db.session.delete(term)
     db.session.commit()
     return '', 204
@@ -738,4 +773,80 @@ def delete_campus(id):
     campus = Campus.query.get_or_404(id)
     db.session.delete(campus)
     db.session.commit()
-    return '', 204 
+    return '', 204
+
+# Academic Record Routes
+@academic_bp.route('/academic-records/<int:student_id>', methods=['GET'])
+def get_academic_record(student_id):
+    record = AcademicRecord.query.filter_by(student_id=student_id).first_or_404()
+    return jsonify({
+        'student_id': record.student_id,
+        'program_id': record.program_id,
+        'enrollment_date': record.enrollment_date.isoformat(),
+        'expected_graduation': record.expected_graduation.isoformat() if record.expected_graduation else None,
+        'current_gpa': record.current_gpa,
+        'total_credits_earned': record.total_credits_earned,
+        'status': record.status
+    })
+
+# Course Enrollment Routes
+@academic_bp.route('/enrollments', methods=['POST'])
+def create_enrollment():
+    data = request.get_json()
+    enrollment = CourseEnrollment(
+        student_id=data['student_id'],
+        course_id=data['course_id'],
+        term_id=data['term_id'],
+        enrollment_date=datetime.utcnow(),
+        status=data.get('status', 'active')
+    )
+    db.session.add(enrollment)
+    db.session.commit()
+    return jsonify({'message': 'Enrollment created successfully', 'id': enrollment.id}), 201
+
+@academic_bp.route('/enrollments/<int:student_id>', methods=['GET'])
+def get_student_enrollments(student_id):
+    enrollments = CourseEnrollment.query.filter_by(student_id=student_id).all()
+    return jsonify([{
+        'course_id': e.course_id,
+        'term_id': e.term_id,
+        'enrollment_date': e.enrollment_date.isoformat(),
+        'status': e.status
+    } for e in enrollments])
+
+# Grade Routes
+@academic_bp.route('/grades', methods=['POST'])
+def record_grade():
+    data = request.get_json()
+    grade = Grade(
+        enrollment_id=data['enrollment_id'],
+        grade_value=data['grade_value'],
+        grade_points=data['grade_points'],
+        recorded_by=data['recorded_by'],
+        status=data.get('status', 'active')
+    )
+    db.session.add(grade)
+    db.session.commit()
+    return jsonify({'message': 'Grade recorded successfully', 'id': grade.id}), 201
+
+@academic_bp.route('/grades/<int:enrollment_id>', methods=['GET'])
+def get_enrollment_grades(enrollment_id):
+    grades = Grade.query.filter_by(enrollment_id=enrollment_id).all()
+    return jsonify([{
+        'grade_value': g.grade_value,
+        'grade_points': g.grade_points,
+        'recorded_at': g.recorded_at.isoformat(),
+        'status': g.status
+    } for g in grades])
+
+# Academic Calendar Routes
+@academic_bp.route('/calendar', methods=['GET'])
+def get_academic_calendar():
+    calendar = AcademicCalendar.query.first_or_404()
+    return jsonify({
+        'id': calendar.id,
+        'academic_year': calendar.academic_year,
+        'start_date': calendar.start_date.isoformat(),
+        'end_date': calendar.end_date.isoformat(),
+        'status': calendar.status
+    }) 

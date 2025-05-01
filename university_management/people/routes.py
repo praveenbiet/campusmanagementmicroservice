@@ -1,7 +1,7 @@
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from app import db
-from .models import Person, ContactInfo, Relationship, IdentificationDocument, ProfileStatus, BiometricData, AccessibilityNeeds
+from .models import Person, ContactInfo, Relationship, IdentificationDocument, ProfileStatus, BiometricData, AccessibilityNeeds, User, Role, Permission, UserRole, RolePermission
 from utils import role_required, validate_request, format_response, log_activity, handle_exception, paginate_query, format_paginated_response
 from datetime import datetime
 import uuid
@@ -265,4 +265,159 @@ def add_accessibility_needs(person_id):
         return format_response(accessibility.to_dict(), 201)
     except Exception as e:
         db.session.rollback()
-        return handle_exception(e) 
+        return handle_exception(e)
+
+# User Routes
+@people_bp.route('/users', methods=['GET'])
+def get_users():
+    users = User.query.all()
+    return jsonify([{
+        'id': user.id,
+        'username': user.username,
+        'email': user.email,
+        'first_name': user.first_name,
+        'last_name': user.last_name,
+        'status': user.status
+    } for user in users])
+
+@people_bp.route('/users/<int:user_id>', methods=['GET'])
+def get_user(user_id):
+    user = User.query.get_or_404(user_id)
+    return jsonify({
+        'id': user.id,
+        'username': user.username,
+        'email': user.email,
+        'first_name': user.first_name,
+        'last_name': user.last_name,
+        'status': user.status
+    })
+
+@people_bp.route('/users', methods=['POST'])
+def create_user():
+    data = request.get_json()
+    user = User(
+        username=data['username'],
+        email=data['email'],
+        first_name=data['first_name'],
+        last_name=data['last_name'],
+        password_hash=data['password']  # Note: Password should be hashed before storage
+    )
+    db.session.add(user)
+    db.session.commit()
+    return jsonify({'message': 'User created successfully', 'id': user.id}), 201
+
+@people_bp.route('/users/<int:user_id>', methods=['PUT'])
+def update_user(user_id):
+    user = User.query.get_or_404(user_id)
+    data = request.get_json()
+    
+    if 'username' in data:
+        user.username = data['username']
+    if 'email' in data:
+        user.email = data['email']
+    if 'first_name' in data:
+        user.first_name = data['first_name']
+    if 'last_name' in data:
+        user.last_name = data['last_name']
+    if 'status' in data:
+        user.status = data['status']
+    
+    user.updated_at = datetime.utcnow()
+    db.session.commit()
+    return jsonify({'message': 'User updated successfully'})
+
+# Role Routes
+@people_bp.route('/roles', methods=['GET'])
+def get_roles():
+    roles = Role.query.all()
+    return jsonify([{
+        'id': role.id,
+        'name': role.name,
+        'description': role.description,
+        'status': role.status
+    } for role in roles])
+
+@people_bp.route('/roles', methods=['POST'])
+def create_role():
+    data = request.get_json()
+    role = Role(
+        name=data['name'],
+        description=data.get('description'),
+        status=data.get('status', 'active')
+    )
+    db.session.add(role)
+    db.session.commit()
+    return jsonify({'message': 'Role created successfully', 'id': role.id}), 201
+
+# Permission Routes
+@people_bp.route('/permissions', methods=['GET'])
+def get_permissions():
+    permissions = Permission.query.all()
+    return jsonify([{
+        'id': permission.id,
+        'name': permission.name,
+        'description': permission.description,
+        'status': permission.status
+    } for permission in permissions])
+
+@people_bp.route('/permissions', methods=['POST'])
+def create_permission():
+    data = request.get_json()
+    permission = Permission(
+        name=data['name'],
+        description=data.get('description'),
+        status=data.get('status', 'active')
+    )
+    db.session.add(permission)
+    db.session.commit()
+    return jsonify({'message': 'Permission created successfully', 'id': permission.id}), 201
+
+# User-Role Assignment Routes
+@people_bp.route('/users/<int:user_id>/roles', methods=['POST'])
+def assign_role_to_user(user_id):
+    data = request.get_json()
+    role_id = data['role_id']
+    
+    user_role = UserRole(
+        user_id=user_id,
+        role_id=role_id,
+        assigned_by=data.get('assigned_by'),
+        status=data.get('status', 'active')
+    )
+    db.session.add(user_role)
+    db.session.commit()
+    return jsonify({'message': 'Role assigned successfully'}), 201
+
+@people_bp.route('/users/<int:user_id>/roles', methods=['GET'])
+def get_user_roles(user_id):
+    user_roles = UserRole.query.filter_by(user_id=user_id).all()
+    return jsonify([{
+        'role_id': ur.role_id,
+        'assigned_at': ur.assigned_at.isoformat(),
+        'status': ur.status
+    } for ur in user_roles])
+
+# Role-Permission Assignment Routes
+@people_bp.route('/roles/<int:role_id>/permissions', methods=['POST'])
+def assign_permission_to_role(role_id):
+    data = request.get_json()
+    permission_id = data['permission_id']
+    
+    role_permission = RolePermission(
+        role_id=role_id,
+        permission_id=permission_id,
+        assigned_by=data.get('assigned_by'),
+        status=data.get('status', 'active')
+    )
+    db.session.add(role_permission)
+    db.session.commit()
+    return jsonify({'message': 'Permission assigned successfully'}), 201
+
+@people_bp.route('/roles/<int:role_id>/permissions', methods=['GET'])
+def get_role_permissions(role_id):
+    role_permissions = RolePermission.query.filter_by(role_id=role_id).all()
+    return jsonify([{
+        'permission_id': rp.permission_id,
+        'assigned_at': rp.assigned_at.isoformat(),
+        'status': rp.status
+    } for rp in role_permissions]) 

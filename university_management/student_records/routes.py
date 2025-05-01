@@ -1,7 +1,7 @@
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from app import db
-from .models import Student, Enrollment, Grade, AcademicStanding, AcademicHold, AcademicAchievement
+from .models import Student, Enrollment, Grade, AcademicStanding, AcademicHold, AcademicAchievement, Transcript, AcademicHistory, Attendance, DisciplineRecord, Achievement
 from utils import role_required, validate_request, format_response, log_activity, handle_exception, paginate_query, format_paginated_response
 from datetime import datetime
 import uuid
@@ -199,4 +199,141 @@ def create_academic_achievement(student_id):
         return format_response(achievement.to_dict(), 201)
     except Exception as e:
         db.session.rollback()
-        return handle_exception(e) 
+        return handle_exception(e)
+
+# Transcript Routes
+@student_records_bp.route('/transcripts/<int:student_id>', methods=['GET'])
+def get_transcript(student_id):
+    transcript = Transcript.query.filter_by(student_id=student_id).first_or_404()
+    return jsonify({
+        'id': transcript.id,
+        'student_id': transcript.student_id,
+        'issue_date': transcript.issue_date.isoformat(),
+        'gpa': transcript.gpa,
+        'total_credits': transcript.total_credits,
+        'status': transcript.status
+    })
+
+@student_records_bp.route('/transcripts', methods=['POST'])
+def create_transcript():
+    data = request.get_json()
+    transcript = Transcript(
+        student_id=data['student_id'],
+        issue_date=datetime.fromisoformat(data['issue_date']),
+        gpa=data['gpa'],
+        total_credits=data['total_credits'],
+        status=data.get('status', 'active')
+    )
+    db.session.add(transcript)
+    db.session.commit()
+    return jsonify({'message': 'Transcript created successfully', 'id': transcript.id}), 201
+
+# Academic History Routes
+@student_records_bp.route('/academic-history/<int:student_id>', methods=['GET'])
+def get_academic_history(student_id):
+    history = AcademicHistory.query.filter_by(student_id=student_id).all()
+    return jsonify([{
+        'id': h.id,
+        'student_id': h.student_id,
+        'term_id': h.term_id,
+        'gpa': h.gpa,
+        'credits_earned': h.credits_earned,
+        'status': h.status
+    } for h in history])
+
+@student_records_bp.route('/academic-history', methods=['POST'])
+def create_academic_history():
+    data = request.get_json()
+    history = AcademicHistory(
+        student_id=data['student_id'],
+        term_id=data['term_id'],
+        gpa=data['gpa'],
+        credits_earned=data['credits_earned'],
+        status=data.get('status', 'active')
+    )
+    db.session.add(history)
+    db.session.commit()
+    return jsonify({'message': 'Academic history created successfully', 'id': history.id}), 201
+
+# Attendance Routes
+@student_records_bp.route('/attendance/<int:student_id>', methods=['GET'])
+def get_student_attendance(student_id):
+    attendance = Attendance.query.filter_by(student_id=student_id).all()
+    return jsonify([{
+        'id': a.id,
+        'student_id': a.student_id,
+        'course_id': a.course_id,
+        'date': a.date.isoformat(),
+        'status': a.status,
+        'notes': a.notes
+    } for a in attendance])
+
+@student_records_bp.route('/attendance', methods=['POST'])
+def record_attendance():
+    data = request.get_json()
+    attendance = Attendance(
+        student_id=data['student_id'],
+        course_id=data['course_id'],
+        date=datetime.fromisoformat(data['date']),
+        status=data['status'],
+        notes=data.get('notes')
+    )
+    db.session.add(attendance)
+    db.session.commit()
+    return jsonify({'message': 'Attendance recorded successfully', 'id': attendance.id}), 201
+
+# Discipline Record Routes
+@student_records_bp.route('/discipline-records/<int:student_id>', methods=['GET'])
+def get_discipline_records(student_id):
+    records = DisciplineRecord.query.filter_by(student_id=student_id).all()
+    return jsonify([{
+        'id': r.id,
+        'student_id': r.student_id,
+        'incident_date': r.incident_date.isoformat(),
+        'incident_type': r.incident_type,
+        'description': r.description,
+        'action_taken': r.action_taken,
+        'status': r.status
+    } for r in records])
+
+@student_records_bp.route('/discipline-records', methods=['POST'])
+def create_discipline_record():
+    data = request.get_json()
+    record = DisciplineRecord(
+        student_id=data['student_id'],
+        incident_date=datetime.fromisoformat(data['incident_date']),
+        incident_type=data['incident_type'],
+        description=data['description'],
+        action_taken=data['action_taken'],
+        status=data.get('status', 'active')
+    )
+    db.session.add(record)
+    db.session.commit()
+    return jsonify({'message': 'Discipline record created successfully', 'id': record.id}), 201
+
+# Achievement Routes
+@student_records_bp.route('/achievements/<int:student_id>', methods=['GET'])
+def get_student_achievements(student_id):
+    achievements = Achievement.query.filter_by(student_id=student_id).all()
+    return jsonify([{
+        'id': a.id,
+        'student_id': a.student_id,
+        'achievement_type': a.achievement_type,
+        'description': a.description,
+        'date_awarded': a.date_awarded.isoformat(),
+        'status': a.status
+    } for a in achievements])
+
+@student_records_bp.route('/achievements', methods=['POST'])
+def create_achievement():
+    data = request.get_json()
+    achievement = Achievement(
+        student_id=data['student_id'],
+        achievement_type=data['achievement_type'],
+        description=data['description'],
+        date_awarded=datetime.fromisoformat(data['date_awarded']),
+        status=data.get('status', 'active')
+    )
+    db.session.add(achievement)
+    db.session.commit()
+    return jsonify({'message': 'Achievement created successfully', 'id': achievement.id}), 201 
