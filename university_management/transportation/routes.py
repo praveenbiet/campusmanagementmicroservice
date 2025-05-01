@@ -4,6 +4,8 @@ from .models import Vehicle, Route, Schedule, Driver, Stop, Booking, Maintenance
 from . import db
 from datetime import datetime
 from utils import role_required, validate_request, format_response, log_activity, handle_exception
+from ..auth.models import User
+from ..auth.utils import role_required
 
 transportation_bp = Blueprint('transportation', __name__)
 
@@ -17,8 +19,10 @@ def get_vehicles():
         'registration_number': v.registration_number,
         'vehicle_type': v.vehicle_type,
         'capacity': v.capacity,
-        'status': v.status
-    } for v in vehicles])
+        'status': v.status,
+        'last_maintenance': v.last_maintenance.isoformat() if v.last_maintenance else None,
+        'next_maintenance': v.next_maintenance.isoformat() if v.next_maintenance else None
+    } for v in vehicles]), 200
 
 @transportation_bp.route('/vehicles', methods=['POST'])
 @jwt_required()
@@ -248,4 +252,68 @@ def create_fuel_record():
     )
     db.session.add(record)
     db.session.commit()
-    return jsonify({'message': 'Fuel record created successfully', 'id': record.id}), 201 
+    return jsonify({'message': 'Fuel record created successfully', 'id': record.id}), 201
+
+# Maintenance Record Routes
+@transportation_bp.route('/maintenance', methods=['GET'])
+@jwt_required()
+def get_maintenance_records():
+    records = MaintenanceRecord.query.all()
+    return jsonify([{
+        'id': r.id,
+        'vehicle_id': r.vehicle_id,
+        'maintenance_type': r.maintenance_type,
+        'description': r.description,
+        'cost': r.cost,
+        'maintenance_date': r.maintenance_date.isoformat(),
+        'next_maintenance_date': r.next_maintenance_date.isoformat() if r.next_maintenance_date else None,
+        'status': r.status
+    } for r in records])
+
+@transportation_bp.route('/maintenance', methods=['POST'])
+@jwt_required()
+@role_required(['admin', 'transport'])
+def create_maintenance_record():
+    data = request.get_json()
+    record = MaintenanceRecord(
+        vehicle_id=data['vehicle_id'],
+        maintenance_type=data['maintenance_type'],
+        description=data.get('description'),
+        cost=data.get('cost'),
+        maintenance_date=datetime.fromisoformat(data['maintenance_date']),
+        next_maintenance_date=datetime.fromisoformat(data['next_maintenance_date']) if data.get('next_maintenance_date') else None,
+        status=data.get('status', 'completed')
+    )
+    db.session.add(record)
+    db.session.commit()
+    return jsonify({'message': 'Maintenance record created successfully', 'id': record.id}), 201
+
+# Transportation Report Routes
+@transportation_bp.route('/reports', methods=['GET'])
+@jwt_required()
+@role_required(['admin', 'transport'])
+def get_transportation_reports():
+    reports = TransportationReport.query.all()
+    return jsonify([{
+        'id': r.id,
+        'report_type': r.report_type,
+        'content': r.content,
+        'created_by': r.created_by,
+        'created_at': r.created_at.isoformat(),
+        'status': r.status
+    } for r in reports])
+
+@transportation_bp.route('/reports', methods=['POST'])
+@jwt_required()
+@role_required(['admin', 'transport'])
+def create_transportation_report():
+    data = request.get_json()
+    report = TransportationReport(
+        report_type=data['report_type'],
+        content=data['content'],
+        created_by=get_jwt_identity(),
+        status=data.get('status', 'draft')
+    )
+    db.session.add(report)
+    db.session.commit()
+    return jsonify({'message': 'Report created successfully', 'id': report.id}), 201 
